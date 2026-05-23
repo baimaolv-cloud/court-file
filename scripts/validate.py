@@ -4,11 +4,18 @@ validate.py — 诉讼文书 Markdown 自动验证
 用法: python3 validate.py <input.md>
 
 验证项：
-1. 证据编号连续性（无跳号、无重复）
+1. 证据编号连续性（无跳号、无重复、无子编号）
 2. 金额汇总一致性
-3. 法条引用格式
+3. 法条引用格式及术语精确性
 4. Markdown语法残留
 5. 主体代称一致性
+6. 证据交叉引用（正文引用 vs 清单编号）
+7. 证据打包目录验证（--pack模式）
+
+2026-05-23 改进：
+- 新增--pack模式验证证据打包目录（编号覆盖、文件数量、同名冲突）
+- 增强子编号检测（含括号/连字符/圆点等变体）
+- 增强法条术语错误检测
 """
 import re
 import sys
@@ -149,8 +156,20 @@ def validate_evidence_cross_references(text):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 validate.py <input.md>", file=sys.stderr)
+        print("Usage:", file=sys.stderr)
+        print("  python3 validate.py <input.md>          # 验证诉状md", file=sys.stderr)
+        print("  python3 validate.py --pack <目录> <最大编号>  # 验证证据打包目录", file=sys.stderr)
         sys.exit(1)
+    
+    if sys.argv[1] == '--pack':
+        # 证据打包目录验证模式
+        if len(sys.argv) < 4:
+            print("Usage: python3 validate.py --pack <目录> <最大编号>", file=sys.stderr)
+            sys.exit(1)
+        pack_dir = sys.argv[2]
+        max_num = int(sys.argv[3])
+        validate_pack_directory(pack_dir, max_num)
+        return
     
     filepath = sys.argv[1]
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -174,6 +193,63 @@ def main():
         print("✅ 验证通过")
     else:
         print("❌ 存在问题，请修复后重新验证")
+
+
+def validate_pack_directory(pack_dir, max_num):
+    """验证证据打包目录：编号覆盖、文件数量、同名冲突"""
+    import os
+    
+    if not os.path.exists(pack_dir):
+        print(f"❌ 目录不存在: {pack_dir}")
+        return
+    
+    files = [f for f in os.listdir(pack_dir) if os.path.isfile(os.path.join(pack_dir, f))]
+    
+    # 提取编号
+    nums = {}
+    for f in files:
+        m = re.match(r'证据(\d+)_', f)
+        if m:
+            n = int(m.group(1))
+            nums.setdefault(n, []).append(f)
+    
+    expected = set(range(1, max_num + 1))
+    covered = set(nums.keys())
+    missing = sorted(expected - covered)
+    extra = sorted(covered - expected)
+    
+    print(f"📁 {pack_dir}")
+    print(f"   文件总数: {len(files)}")
+    print(f"   编号覆盖: {len(covered)}/{max_num}")
+    
+    if missing:
+        print(f"   ❌ 缺失编号({len(missing)}项): {missing}")
+    else:
+        print(f"   ✅ 编号1-{max_num}全覆盖")
+    
+    if extra:
+        print(f"   ⚠️  超出范围编号: {extra}")
+    
+    # 同编号多文件检查
+    multi = {k: v for k, v in nums.items() if len(v) > 1}
+    if multi:
+        print(f"   📎 多文件编号({len(multi)}项):")
+        for n, fnames in sorted(multi.items()):
+            print(f"      证据{n:03d}: {len(fnames)}个文件")
+    
+    # 占位文件检查
+    placeholders = [f for f in files if '_无实体文件.txt' in f]
+    if placeholders:
+        print(f"   📭 占位文件: {len(placeholders)}个")
+        for p in placeholders:
+            print(f"      {p}")
+    
+    # 同名冲突检查
+    basenames = [re.sub(r'_\d+(?=\.)', '', os.path.splitext(f)[0]) for f in files]
+    from collections import Counter
+    dup_basenames = {k: v for k, v in Counter(basenames).items() if v > 1}
+    if dup_basenames:
+        print(f"   ⚠️  同名冲突风险: {dup_basenames}")
 
 
 if __name__ == "__main__":

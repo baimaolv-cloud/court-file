@@ -12,6 +12,7 @@ import re
 import os
 import sys
 
+
 def convert(md_path, pdf_path):
     with open(md_path, "r", encoding="utf-8") as f:
         md = f.read()
@@ -79,44 +80,53 @@ def convert(md_path, pdf_path):
     while i < len(lines):
         s = lines[i].strip()
 
-        if s == "---": r.y += 8; i += 1; continue
-        if s == "": r.y += 6; i += 1; continue
+        if s == "---":
+            r.y += 8; i += 1; continue
+        if s == "":
+            r.y += 6; i += 1; continue
 
+        # 标题（清除markdown标记）
         if s.startswith("# ") and not s.startswith("## "):
-            r.text(s[2:], SZ_TITLE, FN_HEI, align="center"); r.y += 10; i += 1; continue
+            r.text(s[2:].replace("**", ""), SZ_TITLE, FN_HEI, align="center"); r.y += 10; i += 1; continue
         if s.startswith("## "):
-            r.y += 12; r.text(s[3:], SZ_H2, FN_HEI); r.y += 6; i += 1; continue
+            r.y += 12; r.text(s[3:].replace("**", ""), SZ_H2, FN_HEI); r.y += 6; i += 1; continue
         if s.startswith("### "):
-            r.y += 8; r.text(s[4:], SZ_H3, FN_HEI); r.y += 4; i += 1; continue
+            r.y += 8; r.text(s[4:].replace("**", ""), SZ_H3, FN_HEI); r.y += 4; i += 1; continue
         if s.startswith("#### "):
-            r.y += 6; r.text(s[5:], SZ_H4, FN_HEI); r.y += 2; i += 1; continue
+            r.y += 6; r.text(s[5:].replace("**", ""), SZ_H4, FN_HEI); r.y += 2; i += 1; continue
 
+        # 引用块（清除markdown标记）
         if s.startswith("> "):
-            r.wrapped(s[2:], SZ_BODY - 1, FN_SONG, indent=24); i += 1; continue
+            r.wrapped(s[2:].replace("**", ""), SZ_BODY - 1, FN_SONG, indent=24); i += 1; continue
 
+        # 表格（简化处理）
         if s.startswith("|"):
             cells = [c.strip() for c in s.split("|")[1:-1]]
             if cells and not all(re.match(r'^[-:\s]+$', c) for c in cells):
-                r.wrapped(" | ".join(cells), SZ_BODY - 1, FN_SONG)
+                r.wrapped(" | ".join(c.replace("**", "") for c in cells), SZ_BODY - 1, FN_SONG)
             i += 1; continue
 
+        # 有序列表（清除markdown标记）
         m = re.match(r'^(\d+)[.．、]\s+(.+)', s)
         if m:
             content = m.group(2).replace("**", "")
             r.wrapped(f"{m.group(1)}. {content}", SZ_BODY, FN_SONG, indent=20)
             i += 1; continue
 
+        # 无序列表（清除markdown标记）
         if re.match(r'^[-•]\s', s):
             content = re.sub(r'^[-•]\s+', '', s).replace("**", "")
             r.wrapped(f"• {content}", SZ_BODY, FN_SONG, indent=20)
             i += 1; continue
 
+        # 普通段落（清除markdown标记）
         r.wrapped(s.replace("**", ""), SZ_BODY, FN_SONG)
         i += 1
 
     doc.save(pdf_path, garbage=4)
     doc.close()
     print(f"✅ {pdf_path} ({os.path.getsize(pdf_path)/1024:.0f}KB)")
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

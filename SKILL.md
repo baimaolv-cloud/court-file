@@ -97,11 +97,29 @@ python3 scripts/md2pdf.py <input.md> [output.pdf]
 - pdf打开确认中文正常、无markdown残留（如`**`）
 - 三文件（md/docx/pdf）版本号一致
 
+### 9. 证据文件打包
+
+将证据文件按编号重命名打包，用于立案提交。
+
+**扫描建索引：**
+```bash
+python3 scripts/evidence_pack.py --index /path1 /path2 --index-output /tmp/index.json --mapping /tmp/mapping.json
+```
+
+**按映射打包：**
+```bash
+python3 scripts/evidence_pack.py --mapping /tmp/mapping.json --output /tmp/证据打包 --zip /output/证据材料.zip
+```
+
+**⚠️ 映射必须人工确认**：自动匹配不可靠，最终映射必须逐项人工校验。详见[工作流](references/workflow.md)和[避坑指南](references/pitfalls.md)。
+
 ## 关键避坑速查
 
 | 雷区 | 规则 |
 |------|------|
+| docx XML编辑 | 能不做就不做，优先回md重编再导出；必须做时先审计段落结构、建映射表、一次性替换 |
 | 证据编号 | 连续整数，禁子编号，批量替换用Python从大到小 |
+| 证据打包 | 人工精确映射，自动匹配只辅助；先全盘扫描建索引；缺失项分三类标注原因 |
 | 金额 | 单一数据源，改一处grep全文同步，必独立验算总额 |
 | 法条 | 对照原文，术语一个字不能差，确认生效日期 |
 | 主体 | 首次全称+编号，后续统一编号，账号/合同/付款方对号入座 |

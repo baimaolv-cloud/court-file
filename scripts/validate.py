@@ -19,13 +19,16 @@ def validate_evidence_numbers(text):
     nums = [int(m) for m in re.findall(r'证据(\d+)(?!\d)', text)]
     if not nums:
         print("⚠️  未找到证据编号")
-        return
+        return True  # 无证据编号不算错误
     
     unique = sorted(set(nums))
     expected = list(range(min(unique), max(unique) + 1))
     
     missing = set(expected) - set(unique)
     duplicates = [n for n in unique if nums.count(n) > 1]
+    
+    # 检查子编号（禁止）
+    sub_numbers = re.findall(r'证据\d+[\(（-]\d+[\)）]?', text)
     
     if missing:
         print(f"❌ 证据编号跳号: {sorted(missing)}")
@@ -35,7 +38,10 @@ def validate_evidence_numbers(text):
     if duplicates:
         print(f"❌ 证据编号重复出现: {duplicates}")
     
-    return len(missing) == 0 and len(duplicates) == 0
+    if sub_numbers:
+        print(f"❌ 发现子编号（已禁止）: {sub_numbers[:5]}{'...' if len(sub_numbers) > 5 else ''}")
+    
+    return len(missing) == 0 and len(duplicates) == 0 and len(sub_numbers) == 0
 
 
 def validate_amounts(text):
@@ -117,6 +123,30 @@ def validate_subject_consistency(text):
     return len(issues) == 0
 
 
+def validate_evidence_cross_references(text):
+    """检查证据交叉引用：正文引用vs证据清单是否对应"""
+    issues = []
+    
+    # 检查正文中的证据引用
+    body_refs = set(int(m) for m in re.findall(r'证据(\d+)(?!\d)', text))
+    
+    # 检查证据清单中的编号（假设清单格式为"证据N."或编号开头）
+    list_nums = set(int(m) for m in re.findall(r'(?:^|\n)\s*(?:证据)?(\d+)\s*[.、．]', text, re.MULTILINE))
+    
+    if list_nums and body_refs:
+        in_body_not_list = body_refs - list_nums
+        in_list_not_body = list_nums - body_refs
+        
+        if in_body_not_list:
+            print(f"⚠️  正文引用但清单无对应: {sorted(in_body_not_list)}")
+        if in_list_not_body:
+            print(f"⚠️  清单有但正文未引用: {sorted(in_list_not_body)}")
+        if not in_body_not_list and not in_list_not_body:
+            print(f"✅ 证据交叉引用完整")
+    
+    return len(issues) == 0
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 validate.py <input.md>", file=sys.stderr)
@@ -137,6 +167,7 @@ def main():
     all_pass &= validate_law_references(text)
     validate_markdown_residuals(text)
     validate_subject_consistency(text)
+    validate_evidence_cross_references(text)
     
     print("=" * 50)
     if all_pass:

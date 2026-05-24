@@ -29,11 +29,23 @@ def convert(md_path, pdf_path):
 
     class Renderer:
         def __init__(self):
+            self.page_num = 0
             self._new_page()
 
         def _new_page(self):
             self.page = doc.new_page(width=PW, height=PH)
+            self.page_num = doc.page_count
             self.y = MARGIN
+
+        def _add_page_number(self):
+            """在页面底部居中添加页码"""
+            if self.page_num <= 0:
+                return
+            total = doc.page_count
+            txt = f"{self.page_num} / {total}"
+            tw = fitz.get_text_length(txt, fontname=FN_SONG, fontsize=8)
+            tx = (PW - tw) / 2
+            self.page.insert_text(fitz.Point(tx, PH - MARGIN / 2), txt, fontname=FN_SONG, fontsize=8, color=(0.53, 0.53, 0.53))
 
         def _check(self, h):
             if self.y + h > PH - MARGIN:
@@ -122,6 +134,15 @@ def convert(md_path, pdf_path):
         # 普通段落（清除markdown标记）
         r.wrapped(s.replace("**", ""), SZ_BODY, FN_SONG)
         i += 1
+
+    # 添加页码（遍历所有页面）
+    total_pages = doc.page_count
+    for i in range(doc.page_count):
+        page = doc[i]
+        txt = f"{i + 1} / {total_pages}"
+        tw = fitz.get_text_length(txt, fontname=FN_SONG, fontsize=8)
+        tx = (PW - tw) / 2
+        page.insert_text(fitz.Point(tx, PH - MARGIN / 2), txt, fontname=FN_SONG, fontsize=8, color=(0.53, 0.53, 0.53))
 
     doc.save(pdf_path, garbage=4)
     doc.close()

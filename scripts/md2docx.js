@@ -13,7 +13,7 @@
 const fs = require('fs');
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel,
         AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign,
-        LevelFormat } = require('docx');
+        LevelFormat, PageNumber, Footer } = require('docx');
 
 const FONT_BODY = { ascii: 'Times New Roman', eastAsia: '宋体', hAnsi: 'Times New Roman', cs: 'Times New Roman' };
 const FONT_HEAD = { ascii: 'Times New Roman', eastAsia: '黑体', hAnsi: 'Times New Roman', cs: 'Times New Roman' };
@@ -153,7 +153,21 @@ const doc = new Document({
     ]
   },
   sections: [{
-    properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } },
+    properties: {
+      page: { size: { width: 11906, height: 16838 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } }
+    },
+    footers: {
+      default: new Footer({
+        children: [new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [
+            new TextRun({ children: [PageNumber.CURRENT], font: FONT_BODY, size: 18, color: '888888' }),
+            new TextRun({ text: ' / ', font: FONT_BODY, size: 18, color: '888888' }),
+            new TextRun({ children: [PageNumber.TOTAL_PAGES], font: FONT_BODY, size: 18, color: '888888' }),
+          ]
+        })]
+      })
+    },
     children
   }]
 });

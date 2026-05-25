@@ -252,3 +252,72 @@
 - Python脚本中含中文引号的字符串，用**反引号（模板字符串）**或**单引号**包裹
 - JS脚本传参用`--key=value`模式，避免JSON中嵌套引号
 - 中文引号`“”`与ASCII引号`"`视觉相似但编码不同，出错了极难发现
+
+---
+
+## 十四、多文件交叉核对——最易遗漏的雷（2026-05-25 血泪教训）
+
+### 踩过的坑
+1. **证据归类表维权费用写17,127元**（按15天误工费计算），**起诉状写20,159.84元**（按20天误工费计算）→两份文件矛盾，法院一比对就穿帮
+2. **证据32描述写"15天=9,097元"**，**起诉状正文写"20天=12,129.84元"**→同一份文件内部自相矛盾
+3. 金额精确到角分产生0.54元差异（221,359.65÷365×20=12,129.30元 vs 诉状12,129.84元），不专业
+
+### 规则
+- **跨文件金额必须一致**：起诉状、证据归类表、证据链接清单中的同一金额必须完全相同，修改一处必须grep全部文件同步
+- **证据清单描述必须与正文一致**：证据清单中"计算基数(N天=X元)"的天数和金额必须与正文诉讼请求完全对应
+- **金额精度：精确到元即可**：诉请金额精确到整数（如12,129元），避免小数点后尾数差异；差旅费等分项可注明精确值和四舍五入
+- **修改金额时建检查清单**：列出所有涉及该金额的文件和位置，逐项确认同步
+
+### 交叉核对流程
+```
+1. 提取每份文件中的所有金额 → 建金额索引
+2. 比对同一金额在不同文件中的值 → 找差异
+3. 提取证据清单中的计算描述 → 比对与正文是否一致
+4. 汇总所有不一致项 → 一次性修复
+```
+
+---
+
+## 十五、docx页码XML操作——最容易遗漏步骤的雷（2026-05-25 教训）
+
+### 完整流程（给无页脚的docx添加页底居中页码）
+
+1. **解包**：`python3 scripts/unpack.py input.docx /tmp/unpacked`
+2. **创建页脚XML**：`word/footer1.xml`，内容为PAGE域代码+居中对齐
+3. **添加关系**：在`word/_rels/document.xml.rels`中添加`<Relationship Id="rIdN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`
+4. **引用页脚**：在`word/document.xml`的`<w:sectPr>`中添加`<w:footerReference w:type="default" r:id="rIdN"/>`
+5. **声明内容类型**：在`[Content_Types].xml`中添加`<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`
+6. **打包**：用Python zipfile打包（不用命令行zip，避免中文编码问题）
+
+### ⚠️ 易遗漏步骤
+- 忘记第4步（添加footerReference到sectPr）→页脚存在但不显示
+- 忘记第5步（添加Content_Types声明）→Word打开报修复错误
+- 已有footer1.xml但内容为空→需替换内容而非新建文件
+
+### 页脚XML模板（PAGE域代码居中）
+```xml
+<w:ftr xmlns:wpc="..." xmlns:mc="..." xmlns:r="..." xmlns:w="..." mc:Ignorable="w14 w15 w16se wp14">
+  <w:p>
+    <w:pPr><w:jc w:val="center"/></w:pPr>
+    <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+    <w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>
+    <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+    <w:r><w:t>1</w:t></w:r>
+    <w:r><w:fldChar w:fldCharType="end"/></w:r>
+  </w:p>
+</w:ftr>
+```
+
+---
+
+## 十六、Python版本兼容——macOS环境雷（2026-05-25 教训）
+
+### 踩过的坑
+1. macOS自带Python 3.9.6，不支持`str | None`类型注解语法（3.10+才支持）
+2. 脚本用`def foo(x: str | None = None)`→报SyntaxError
+3. docx2pdf依赖Microsoft Word（macOS未装Word则转换失败）
+
+### 规则
+- **脚本类型注解用`Optional[str]`替代`str | None`**，确保Python 3.9兼容
+- **PDF转换备选方案**：无Word时用reportlab+python-docx自建转换（排版有差异但可用）
+- **打包脚本避免3.10+语法**：`match/case`、`str | None`、`TypeAlias`等一律不用

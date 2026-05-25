@@ -197,6 +197,8 @@ with open(filepath, 'w') as f:
 - 每个金额只在一处定义，其他位置引用
 - 修改时必须全文搜索所有涉及金额的位置同步更新
 - 标的额汇总行必须与各分项独立加总结果一致
+- **诉请金额精确到元**，避免角分尾数差异（如12,129.30→12,129元）
+- 差旅费等分项可注明精确值和四舍五入（如"1,747.88元，四舍五入1,748元"）
 
 ### 验算检查清单
 ```
@@ -207,6 +209,35 @@ with open(filepath, 'w') as f:
 □ 可期待利益 = 各项可期待利益之和
 □ 证据清单中的金额与正文引用一致
 □ 证据清单中的发票金额与正文引用一致
+□ **多文件交叉核对**：起诉状、证据归类表、证据链接清单中的同一金额必须一致
+□ **证据清单描述与正文一致**：如"N天=X元"的天数和金额必须对应
+```
+
+### 多文件交叉核对流程（v5新增）
+
+起诉状、证据归类表、证据链接清单等多份文件之间容易产生不一致，必须系统性核对：
+
+```python
+# 核对脚本模板
+import re
+
+def extract_amounts(text):
+    """提取文件中所有金额"""
+    return re.findall(r'([\d,]+\.?\d*)\s*元', text)
+
+def extract_evidence_descriptions(text):
+    """提取证据清单中的计算描述"""
+    return re.findall(r'证据\d+[^\n]*?(\d+天[＝=][\d,]+\.?\d*元)', text)
+
+def cross_check(files: dict):
+    """多文件交叉核对
+    files: {文件名: 文件内容}
+    """
+    # 1. 提取各文件金额
+    # 2. 找出同一金额在不同文件中的差异
+    # 3. 提取证据描述中的计算参数
+    # 4. 比对与正文诉讼请求是否一致
+    pass
 ```
 
 ### 金额四舍五入规则
@@ -378,3 +409,67 @@ curl -sI "https://example.com" | head -1
 | 新闻报道 | "事件关键词+年份+媒体名" | 官方媒体>门户网站>自媒体 |
 | 开源仓库 | "组织名+仓库名+GitHub/Gitee" | GitHub>Gitee |
 | 学术论文 | "标题+arXiv/知网" | arXiv>知网>转载 |
+
+---
+
+## 十一、docx页码XML操作（v5新增）
+
+当导出的docx无页码或需要手动添加页码时，需直接操作docx XML。
+
+### 完整5步流程
+
+1. **解包docx**
+```bash
+python3 scripts/unpack.py input.docx /tmp/unpacked
+```
+
+2. **创建/更新页脚XML** (`word/footer1.xml`)
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<w:ftr xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" 
+       xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" 
+       mc:Ignorable="w14 w15 w16se wp14">
+  <w:p>
+    <w:pPr><w:jc w:val="center"/></w:pPr>
+    <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+    <w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>
+    <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+    <w:r><w:t>1</w:t></w:r>
+    <w:r><w:fldChar w:fldCharType="end"/></w:r>
+  </w:p>
+</w:ftr>
+```
+
+3. **添加关系到** `word/_rels/document.xml.rels`
+```xml
+<Relationship Id="rIdN" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>
+```
+（rIdN取未使用的编号，通常查现有最大rId+1）
+
+4. **引用页脚到** `word/document.xml` 的 `<w:sectPr>` 中
+```xml
+<w:footerReference w:type="default" r:id="rIdN"/>
+```
+
+5. **声明内容类型到** `[Content_Types].xml`
+```xml
+<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
+```
+
+6. **打包**
+```python
+import zipfile, os
+with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+    for root, dirs, files in os.walk(input_dir):
+        for f in files:
+            full = os.path.join(root, f)
+            arcname = os.path.relpath(full, input_dir)
+            zout.write(full, arcname)
+```
+
+### ⚠️ 易遗漏步骤
+- 忘记第4步→页脚存在但不显示
+- 忘记第5步→Word打开报修复错误
+- 已有footer1.xml但内容为空→需替换内容
+- 已有footer1.xml已有关系→不需要再添加关系，只需更新内容

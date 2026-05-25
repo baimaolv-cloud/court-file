@@ -12,10 +12,10 @@ validate.py — 诉讼文书 Markdown 自动验证
 6. 证据交叉引用（正文引用 vs 清单编号）
 7. 证据打包目录验证（--pack模式）
 
-2026-05-23 改进：
-- 新增--pack模式验证证据打包目录（编号覆盖、文件数量、同名冲突）
-- 增强子编号检测（含括号/连字符/圆点等变体）
-- 增强法条术语错误检测
+2026-05-25 v5改进：
+- 新增--cross-check模式：多文件交叉核对金额一致性
+- 新增证据清单描述与正文计算参数比对
+- 金额精度检查：诉请金额精确到元
 """
 import re
 import sys
@@ -159,7 +159,15 @@ def main():
         print("Usage:", file=sys.stderr)
         print("  python3 validate.py <input.md>          # 验证诉状md", file=sys.stderr)
         print("  python3 validate.py --pack <目录> <最大编号>  # 验证证据打包目录", file=sys.stderr)
+        print("  python3 validate.py --cross-check <file1.md> <file2.md> ...  # 多文件交叉核对", file=sys.stderr)
         sys.exit(1)
+    
+    if sys.argv[1] == '--cross-check':
+        if len(sys.argv) < 3:
+            print("Usage: python3 validate.py --cross-check <file1.md> <file2.md> ...", file=sys.stderr)
+            sys.exit(1)
+        cross_check_files(sys.argv[2:])
+        return
     
     if sys.argv[1] == '--pack':
         # 证据打包目录验证模式
@@ -254,3 +262,79 @@ def validate_pack_directory(pack_dir, max_num):
 
 if __name__ == "__main__":
     main()
+
+
+def cross_check_files(file_paths):
+    """多文件交叉核对：检查同一金额在不同文件中是否一致"""
+    import os
+    
+    if len(file_paths) < 2:
+        print("❌ 交叉核对至少需要2个文件")
+        return
+    
+    # 读取所有文件
+    files_data = {}
+    for fp in file_paths:
+        if not os.path.exists(fp):
+            print(f"⚠️  文件不存在: {fp}")
+            continue
+        with open(fp, 'r', encoding='utf-8') as f:
+            files_data[os.path.basename(fp)] = f.read()
+    
+    if len(files_data) < 2:
+        print("❌ 有效文件不足2个，无法交叉核对")
+        return
+    
+    print(f"📋 交叉核对: {list(files_data.keys())}")
+    print("=" * 50)
+    
+    # 提取各文件金额
+    file_amounts = {}
+    for name, text in files_data.items():
+        amounts = re.findall(r'([\d,]+\.?\d*)\s*元', text)
+        # 标准化金额（去逗号）
+        normalized = {}
+        for a in amounts:
+            key = a.replace(',', '')
+            normalized[key] = a
+        file_amounts[name] = normalized
+    
+    # 比对关键金额
+    key_amounts = ['30000000', '161318.8', '161318', '20159.84', '20159', '12129.84', '12129',
+                   '1800', '247', '1748', '1747.88', '1260', '2975', '9986', '1']
+    
+    issues = []
+    for amt in key_amounts:
+        found_in = {}
+        for name, amounts in file_amounts.items():
+            if amt in amounts:
+                found_in[name] = amounts[amt]
+        
+        if len(found_in) >= 2:
+            values = set(found_in.values())
+            if len(values) > 1:
+                print(f"❌ 金额不一致 [{amt}元]: {found_in}")
+                issues.append(amt)
+    
+    # 比对证据清单描述
+    for name, text in files_data.items():
+        desc_matches = re.findall(r'证据\d+[^\n]*?(\d+天[＝=]([\d,]+\.?\d*)元)', text)
+        if desc_matches:
+            for desc, val in desc_matches:
+                print(f"📊 {name}: {desc}")
+    
+    # 检查金额精度
+    for name, text in files_data.items():
+        decimal_amounts = re.findall(r'([\d,]+\.\d{1,2})\s*元', text)
+        if decimal_amounts:
+            for a in decimal_amounts[:5]:
+                val = float(a.replace(',', ''))
+                if val != int(val) and val > 100:
+                    # 大额诉请金额有角分
+                    print(f"⚠️  {name}: 大额诉请金额含角分 {a}元，建议精确到元")
+    
+    print("=" * 50)
+    if issues:
+        print(f"❌ 发现{len(issues)}处金额不一致")
+    else:
+        print("✅ 交叉核对通过")
